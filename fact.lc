@@ -1,0 +1,16 @@
+let zero = lambda s z . z in
+let five  = lambda s z. s (s (s (s (s z)))) in
+let true  = lambda a b. a in
+let false = lambda a b. b in
+let isZero = lambda n. n (lambda x. false) true in
+let succ = lambda n. lambda s z. s (n s z) in
+let pair = lambda a b. lambda c. c a b in
+let fst  = lambda p. p (lambda f t. f) in
+let snd  = lambda p. p (lambda f t. t) in
+let pred = lambda n. snd (n (lambda p. pair (succ (fst p)) (fst p)) (pair zero zero)) in
+let plus = lambda m n. m succ n in
+let times = lambda m n. m (plus n) zero in
+let Y = lambda f. (lambda x. f (x x)) (lambda x. f (x x)) in
+let factF = lambda factR m . (isZero m) one (mult (factR (pred m)) m) in
+let fact = Y factF in
+fact five
