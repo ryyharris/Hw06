@@ -1,4 +1,3 @@
 Rae Harris
 Daniel Jin
-Alex Clemens
-# Hw07
+# Hw06
