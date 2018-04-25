@@ -1,0 +1,4 @@
+let true = lambda a b . a in
+let false = lambda a b . b in
+let not = lambda b1 . lambda a b . b1 b a in
+not true 

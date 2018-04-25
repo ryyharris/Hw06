@@ -1,0 +1,62 @@
+let id = lambda x. x in
+let const = lambda x y. x in
+
+let true = lambda t f. t in
+let false = lambda t f. f in
+let and = lambda b1 b2. b1 b2 false in
+let or = lambda b1 b2. b1 true b2 in
+let not = lambda b. b false true in
+let if = lambda b t e. b t e id in
+
+let zero = lambda s z. z in
+let succ = lambda n. lambda s z. s (n s z) in
+
+let one = succ zero in
+let two = succ one in
+let three = succ two in
+let four = succ three in
+let five = succ four in
+
+let plus = lambda m n. m succ n in
+let times = lambda m n. m (plus n) zero in
+let iszero = lambda n. n (lambda x. false) true in
+
+let pair = lambda a b. lambda c. c a b in
+let fst = lambda p. p (lambda a b. a) in
+let snd = lambda p. p (lambda a b. b) in
+
+let pred = lambda n. snd (n (lambda p. pair (succ (fst p)) (fst p))
+(pair zero zero)) in
+let sub = lambda m n. n pred m in
+
+let equal = lambda m n. and (iszero (sub m n)) (iszero (sub n m)) in
+
+let nil = pair false false in
+let cons = lambda a b. pair true (pair a b) in
+
+let null = lambda l. not (fst l) in
+let hd = lambda l. fst (snd l) in
+let tl = lambda l. snd (snd l) in
+
+let case = lambda l n c. if (null l) n (lambda x. c (hd l) (tl l)) in
+
+let Y = lambda f. (lambda x. f (x x)) (lambda x y. f (x x) y) in
+let map = lambda f. Y (lambda map l.
+case l (const nil) (lambda h t. cons (f h) (map f t))) in
+
+let length = Y (lambda length l. case l (const zero) (lambda h t. succ
+(length t))) in
+
+let downFrom = Y (lambda downFrom n. if (iszero n) (const (cons zero
+nil)) (lambda x. cons n (downFrom (pred n)))) in
+
+let rev' = Y (lambda rev' xs ys. case xs (const ys) (lambda x xs. rev'
+xs (cons x ys))) in
+let rev = lambda l. rev' l nil in
+
+let upTo = lambda n. rev (downFrom n) in
+
+let last = Y (lambda last l. case l (const id) (lambda h t. if (null t)
+(const h) (lambda x. last t))) in
+
+and (equal zero (hd (upTo five))) (equal five (last (upTo five)))

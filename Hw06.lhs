@@ -21,47 +21,14 @@ Do not output unnecessary text when a program succeeds.
 > import Data.Either
 > import Data.Maybe
 
-
-
-> -- GRAMMAR ->   e ::= x | e1 e2 | lambda x. e
-
 > type VarName = String
-
 > data LambdaCalc =
 >     Var VarName
 >   | Apply LambdaCalc LambdaCalc -- Seq (Var "x") (Var "y") == x y
 >   | Lambda [VarName] LambdaCalc -- Lam (Var "x" , Var "y") (Var "z") == lam x y . z
 >   | Assign VarName LambdaCalc LambdaCalc
 >   | Paren LambdaCalc
->	deriving (Show, Eq)
-
-
-> data Token =
->     TLet
->   | TIn
->   | TLambda 
->   | TLParen
->   | TRParen
->   | TDot
->   | TEq
->   | TVar String -- x or e from lambda x. e
->   deriving (Show, Eq)
-
-> lexer :: String -> [Token]
-> lexer []                      = []
-> lexer (w:s) | isSpace w       = lexer (dropWhile isSpace s)
-> lexer ('(':s)      		= TLParen:lexer s
-> lexer (')':s)      		= TRParen:lexer s
-> lexer ('l':'e':'t':' ':s)     = TLet:lexer s
-> lexer ('i':'n':' ':s)         = TIn:lexer s
-> lexer ('.':s)                 = TDot:lexer s
-> lexer ('l':'a':'m':'b':'d':'a':' ':s)  = TLambda:lexer s
-> lexer ('=':s)                 = TEq:lexer s
-> lexer s | isAlpha (head s) =
->   let (var,s') =  span (\char -> isAlphaNum char || char == (head "'")) s in 
->   TVar var:lexer s'
-> lexer (n:_) = error $ "Lexer error: unexpected character " ++ [n]
-
+> 	deriving (Show, Eq)
 
 > newtype Parser a = Parser { parse :: String -> Maybe (a,String) }
 
@@ -145,11 +112,11 @@ Do not output unnecessary text when a program succeeds.
 > applyexps, assign, lexp, atom :: Parser LambdaCalc
 > assign = Assign <$> (ws *> kw "let" *> var <* char '=') <*> lexp <* kw "in" <*> assign
 >          <|> lexp
-> lexp = Lambda <$> (ws *> kw "lambda" *> ws *> parseVarNames <* ws <* char '.') <*> lexp
+> lexp = Lambda <$> (ws *> kw "lambda" *> ws *> parseVarNames <* ws <* char '.') <*> assign
 >        <|> applyexps
-> applyexps = atom `chainl1` (ws *> pure Apply)
+> applyexps = atom `chainl1` (ws *> pure Apply) 
 > atom = Var <$> var
->        <|> (char '(' *> (Paren <$> lexp) <* char ')')
+>        <|> (char '(' *> (Paren <$> assign) <* char ')')
 
 
 > parseApply = parse assign
@@ -176,13 +143,16 @@ Do not output unnecessary text when a program succeeds.
 
 > -- Assign v l1 l2, replace any v that occur in lc2 with lc1
 > beta :: LambdaCalc -> LambdaCalc
+> beta (Lambda vs e) = Lambda vs (beta e)
+> beta (Paren e) = Paren (beta e)
+> beta (Apply e1 e2) = Apply (beta e1) (beta e2)
 > beta (Assign var lc1 lc2) = case lc2 of
 >  (Var v) -> if var == v then lc1 else lc2
 >  (Apply e1 e2) -> Apply (beta (Assign var lc1 e1)) (beta (Assign var lc1 e2))
 >  (Lambda vlst e) ->  Lambda vlst (beta (Assign var lc1 e))
 >  (Assign v e1 e2) -> beta (Assign v e1 (beta (Assign var lc1 e2)))
 >  (Paren e) -> Paren $ beta (Assign var lc1 e)
-> beta x = x
+> beta x = x -- var, 
 
 
 > eval' :: LambdaCalc -> Either String LambdaCalc
@@ -199,34 +169,36 @@ Do not output unnecessary text when a program succeeds.
 >                   then eval' (beta (Assign v e2' e1'))
 >                   else  eval' $ Lambda vs (beta (Assign v e2' e1'))
 >   otherwise -> Left $ "e1 invalid "++ show e1 ++ "\n"
-> 
-> subst' :: LambdaCalc -> VarName -> LambdaCalc -> LambdaCalc
-> subst' (Var v) var e2          = if v == var then e2
->                                else Var v
-> subst' (Apply lam1 lam2) x e2  = Apply (subst' lam1 x e2) (subst' lam2 x e2)
-> subst' (Paren e1) x e2         = subst' e1 x e1
-> subst' (Lambda [] e1) x e2 = subst' e1 x e2 
-> subst' (Lambda (v:vs) e1) x e2 = substHelp (Assign x (Lambda (v:vs) e1) e2 )
-> substHelp (Assign var lc1 lc2) = case lc2 of
->    (Var v) -> if var == v then lc1 else lc2
->    (Apply e1 e2) -> Apply (substHelp (Assign var lc1 e1)) (substHelp (Assign var lc1 e2))
->    (Lambda vlst e) ->  if var `elem` vlst
->                        then (Lambda vlst e)
->                        else Lambda vlst (substHelp (Assign var lc1 e))
->    (Assign v e1 e2) -> substHelp (Assign v e1 (substHelp (Assign var lc1 e2)))
->    (Paren e) -> Paren $ substHelp (Assign var lc1 e)
-> substHelp e = e
+> eval' (Assign v e1 e2) = eval' $ beta (Assign v e1 e2)
 
 > removeParen (Right (Paren e)) = removeParen $ Right e
 > removeParen (Right e) = Right e
 > removeParen (Left e) = Left e
 
 
+> -- subst' :: LambdaCalc -> VarName -> LambdaCalc -> LambdaCalc
+> -- subst' (Var v) var e2          = if v == var then e2
+> --                                else Var v
+> -- subst' (Apply lam1 lam2) x e2  = Apply (subst' lam1 x e2) (subst' lam2 x e2)
+> -- subst' (Paren e1) x e2         = subst' e1 x e1
+> -- subst' (Lambda [] e1) x e2 = subst' e1 x e2 
+> -- subst' (Lambda (v:vs) e1) x e2 = substHelp (Assign x (Lambda (v:vs) e1) e2 )
+> -- substHelp (Assign var lc1 lc2) = case lc2 of
+> --    (Var v) -> if var == v then lc1 else lc2
+> --    (Apply e1 e2) -> Apply (substHelp (Assign var lc1 e1)) (substHelp (Assign var lc1 e2))
+> --    (Lambda vlst e) ->  if var `elem` vlst
+> --                        then (Lambda vlst e)
+> --                        else Lambda vlst (substHelp (Assign var lc1 e))
+> --    (Assign v e1 e2) -> substHelp (Assign v e1 (substHelp (Assign var lc1 e2)))
+> --    (Paren e) -> Paren $ substHelp (Assign var lc1 e)
+> -- substHelp e = e
+
+
 
 > ---------------- PRINTER  -----------------
 
 > printer ::  Either String LambdaCalc -> IO String
-> printer (Left error) = die error
+> printer (Left error) = die $ "Error in printing the function. \n" ++ error
 > printer (Right lc) = return $ prettyPrint lc  
 
 > prettyPrint :: LambdaCalc -> String
@@ -237,23 +209,28 @@ Do not output unnecessary text when a program succeeds.
 
 > printChurch :: Either String LambdaCalc -> IO String
 > printChurch (Left error) = die error
-> printChurch (Right lc) = case churchNum lc  of
->  Left errorMessage -> die errorMessage
+> printChurch (Right lc) = case churchNum lc 0  of
+>  Left errorMessage -> die $ "Error in printing a church numeral. \n" ++errorMessage
 >  Right value -> return $ show value
 
 > -- lam has been completely evaluated
-> churchNum :: LambdaCalc -> Either String Int
-> churchNum lam = church lam 0
->   where church :: LambdaCalc -> Int -> Either String Int
->         church (Lambda (s:z:[]) e) val
->              | e == (Var z) =  Right val
->              | e == (Var s) = Left $ "Wrong value, "++s++", should be "++z
->              | otherwise = church e val
->         church (Lambda sx e) val = Left $ "Too many or few values in lambda, "++ unwords sx
->         church (Paren e) val = church e val
->         church (Apply e1 e2) val = case e1 of
->           Var s -> church e2 (val+1)
->           otherwise -> church e1 val
+> churchNum :: LambdaCalc -> Int -> Either String Int
+> churchNum (Var z) val = Right val
+> churchNum (Lambda (n:[]) (Var n')) val =
+>           if n == n' then Right $ val+1
+>           else Left $ "Church error in " ++ show (Lambda (n:[]) (Var n'))
+> churchNum (Lambda (s:z:[]) e) val = case e of
+>        (Var v)              ->  if v == z then Right val
+>                                 else Left $ "Wrong value, "++s++", should be "++z
+>        (Apply (Var s) e2)   -> churchNum e2 (val+1)
+>        (Paren e')            -> churchNum e' val
+>        otherwise            -> churchNum e val
+> churchNum (Lambda sx e) val = Left $ "Too many or few values in lambda, "++ unwords sx
+> churchNum (Paren e) val = churchNum e val
+> churchNum (Apply e1 e2) val = case e1 of
+>   Var s -> churchNum e2 (val+1)
+>   otherwise -> churchNum e1 val
+
 
 > result, churchResult :: String -> IO String
 > result str = (printer $ eval' $ beta $ getLC str)
@@ -269,6 +246,8 @@ Do not output unnecessary text when a program succeeds.
 > three = "lambda s z. s ((lambda s z. s ((lambda s z. s ((lambda s z. z) s z)) s z)) s z)"
 > three' = "let zero = lambda s z. z in let succ = lambda n. lambda s z. s (n s z) in succ (succ (succ zero))"
 > four = "let zero = lambda s z. z in let succ = lambda n. lambda s z. s (n s z) in succ (succ (succ (succ zero)))"
+> five =" lambda s z. s (s (s (s (s z))))"
+
 
 > --finds which argument in user input is file
 > findFile :: [String] -> String
@@ -312,33 +291,30 @@ Do not output unnecessary text when a program succeeds.
 > doConfig (a:as) lambda 
 >   | a == CFlag = if doCFlag lambda 
 >                  then doConfig as lambda
->                  else return $ "The program " ++ lambda ++ " is not well scoped \n"
+>                  else die $ "The program " ++ lambda ++ " is not well scoped \n"
 >   | a == Command = doConfig as lambda
 >   | a == File = doConfig as lambda
 >   | a == NFlag = doNConfig as lambda 
 >   | a == CNFlag = if doCFlag lambda 
 >                  then doNConfig as lambda
->                  else return $ "The program " ++ lambda ++ " is not well scoped \n"
+>                  else die $ "The program " ++ lambda ++ " is not well scoped \n"
 
 > doNConfig ::  [Arguments] -> String -> IO String
 > doNConfig [] lambda = churchResult lambda
 > doNConfig (a:as) lambda
 >   | a == CFlag = if doCFlag lambda 
 >                  then doNConfig as lambda
->                  else return $ "The program \n" ++ lambda ++ "\n is not well scoped \n"
+>                  else die $ "The program \n" ++ lambda ++ "\n is not well scoped \n"
 >   | a == Command = doNConfig as lambda
 >   | a == File = doNConfig as lambda
 >   | a == NFlag = doNConfig as lambda
 >   | a == CNFlag = if doCFlag lambda 
 >                  then doNConfig as lambda
->                  else return $ "The program " ++ lambda ++ " is not well scoped \n"
+>                  else die $ "The program " ++ lambda ++ " is not well scoped \n"
 
 > doCFlag :: String -> Bool
-> doCFlag str
->	| (isJust (parseApply str)) && (isScoped [] (getLC str)) = True
->	| otherwise = False
+> doCFlag str = (isJust (parseApply str)) && (isScoped [] (getLC str))
 
-> main = main' `catch` handler
 
               
 > toTry :: IO ()  
@@ -347,8 +323,8 @@ Do not output unnecessary text when a program succeeds.
 >            putStrLn $ "The file has " ++
 >                     show (length (lines contents)) ++ " lines!"  
 
-> main' :: IO ()
-> main' = do
+> main :: IO ()
+> main = do
 >	 cmdArgs <- getArgs 
 >        let args = filterCmd cmdArgs in
 >  	   if File `elem` args then
@@ -360,14 +336,11 @@ Do not output unnecessary text when a program succeeds.
 >  	     do
 >  	       lambdas <- getLine
 >              ans <- doConfig args lambdas
->              if doCFlag ans then putStr $ ans ++ "\n"
->              else die $ "error, " ++ans
-
+>              putStr $ ans ++ "\n"
+>              
 > checkCorrect :: String -> String
-> checkCorrect str = if doCFlag str then str else "error"
-
-> handler :: IOError -> IO ()  
-> handler e = putStrLn "Whoops, had some trouble!"  
+> checkCorrect str = if doCFlag str then str
+>                    else  "Error occured in checking the correction of \n" ++ str
 
 > ---------------- TESTS  -----------------
 
@@ -394,3 +367,12 @@ Do not output unnecessary text when a program succeeds.
 > test11 = "12"
 
 
+> -- ` == works
+> -- With ChurchResult
+> hw1 = "lambda s z. let t = s in let u = z in s (s (s (s z)))" -- 4 `
+> hw2 = "lambda x. (lambda y z. y (y ((lambda x. x) z))) x"     -- 2
+> hw3 =  "lambda x. x"     -- 1 `
+> hw4 = "lambda s z. s"    -- Exits with error. `
+
+> -- With c flag
+> c1 = "lambda x. x y z" -- Exit failure `
